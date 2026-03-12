@@ -41,9 +41,23 @@ st.markdown("""
 # ══════════════════════════════════════════════════════════════
 @st.cache_resource
 def load_all_models():
-    nlp        = spacy.load("en_core_web_sm")
-    w2v        = Word2Vec.load("legal_word2vec.model")
-    lstm_model = load_model("lstm_final.keras")
+    import os
+    os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # suppress TF logs
+
+    nlp = spacy.load("en_core_web_sm")
+    w2v = Word2Vec.load("legal_word2vec.model")
+
+    # Load keras model with compatibility fix
+    from tensorflow.keras.models import load_model
+    lstm_model = load_model(
+        "lstm_final.keras",
+        compile=False    # avoids optimizer compatibility issues
+    )
+    lstm_model.compile(
+        optimizer="adam",
+        loss="categorical_crossentropy",
+        metrics=["accuracy"]
+    )
 
     with open("label_encoder.pkl", "rb") as f:
         le = pickle.load(f)
@@ -54,7 +68,6 @@ def load_all_models():
     nltk.download("punkt_tab", quiet=True)
 
     return nlp, w2v, lstm_model, le
-
 
 # ══════════════════════════════════════════════════════════════
 # PREPROCESSING
