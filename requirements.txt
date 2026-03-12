@@ -1,0 +1,7 @@
+streamlit
+numpy
+spacy
+gensim
+tensorflow
+nltk
+pandas
