@@ -4,7 +4,6 @@ import pickle
 import re
 import spacy
 from gensim.models import Word2Vec
-from tensorflow.keras.models import load_model
 import nltk
 from nltk.stem import WordNetLemmatizer
 from nltk.corpus import stopwords
@@ -41,23 +40,27 @@ st.markdown("""
 # ══════════════════════════════════════════════════════════════
 @st.cache_resource
 def load_all_models():
+    import json
     import os
-    os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # suppress TF logs
+    os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
+    # Load spaCy and Word2Vec
     nlp = spacy.load("en_core_web_sm")
     w2v = Word2Vec.load("legal_word2vec.model")
 
-    # Load keras model with compatibility fix
-    from tensorflow.keras.models import load_model
-    lstm_model = load_model(
-        "lstm_final.keras",
-        compile=False    # avoids optimizer compatibility issues
+    # Load LSTM without tensorflow dependency issues
+    from tensorflow.keras.models import model_from_json
+
+    with open("model_architecture.json") as f:
+        model_json = f.read()
+
+    lstm_model = model_from_json(model_json)
+
+    weights = np.load(
+        "model_weights.npy",
+        allow_pickle=True
     )
-    lstm_model.compile(
-        optimizer="adam",
-        loss="categorical_crossentropy",
-        metrics=["accuracy"]
-    )
+    lstm_model.set_weights(list(weights))
 
     with open("label_encoder.pkl", "rb") as f:
         le = pickle.load(f)
