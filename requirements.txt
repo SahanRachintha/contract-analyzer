@@ -1,10 +1,12 @@
 streamlit==1.32.0
-tensorflow-cpu==2.16.1
+tensorflow-cpu==2.16.2
+keras==3.3.3
 gensim==4.3.2
 spacy==3.7.4
 nltk==3.8.1
 scikit-learn==1.4.2
 numpy==1.26.4
 pandas==2.2.0
-protobuf==3.20.3
+protobuf==4.25.3
+h5py==3.11.0
 https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
