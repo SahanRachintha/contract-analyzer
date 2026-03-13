@@ -2,7 +2,6 @@ import streamlit as st
 import numpy as np
 import pickle
 import re
-import spacy
 from gensim.models import Word2Vec
 import nltk
 from nltk.stem import WordNetLemmatizer
@@ -40,37 +39,33 @@ st.markdown("""
 # ══════════════════════════════════════════════════════════════
 @st.cache_resource
 def load_all_models():
-    import json
-    import os
-    os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+    import onnxruntime as ort
 
-    # Load spaCy and Word2Vec
-    nlp = spacy.load("en_core_web_sm")
+    # Load Word2Vec
     w2v = Word2Vec.load("legal_word2vec.model")
 
-    # Load LSTM without tensorflow dependency issues
-    from tensorflow.keras.models import model_from_json
-
-    with open("model_architecture.json") as f:
-        model_json = f.read()
-
-    lstm_model = model_from_json(model_json)
-
-    weights = np.load(
-        "model_weights.npy",
-        allow_pickle=True
+    # Load ONNX model
+    sess_options = ort.SessionOptions()
+    sess_options.log_severity_level = 3
+    lstm_session = ort.InferenceSession(
+        "lstm_model.onnx",
+        sess_options=sess_options
     )
-    lstm_model.set_weights(list(weights))
 
+    # Load label encoder
     with open("label_encoder.pkl", "rb") as f:
         le = pickle.load(f)
 
-    nltk.download("punkt",     quiet=True)
-    nltk.download("stopwords", quiet=True)
-    nltk.download("wordnet",   quiet=True)
-    nltk.download("punkt_tab", quiet=True)
+    # Download NLTK data
+    nltk.download("punkt",        quiet=True)
+    nltk.download("punkt_tab",    quiet=True)
+    nltk.download("stopwords",    quiet=True)
+    nltk.download("wordnet",      quiet=True)
+    nltk.download("averaged_perceptron_tagger", quiet=True)
+    nltk.download("maxent_ne_chunker", quiet=True)
+    nltk.download("words",        quiet=True)
 
-    return nlp, w2v, lstm_model, le
+    return w2v, lstm_session, le
 
 # ══════════════════════════════════════════════════════════════
 # PREPROCESSING
@@ -188,24 +183,36 @@ PATTERNS = {
 }
 
 
-def extract_parties(text, nlp):
-    header = text[:1500]
-    doc    = nlp(header)
+def extract_parties(text):
+    """
+    Extract contracting parties using NLTK NER
+    No spaCy required
+    """
+    header  = text[:1500]
     parties = []
 
-    for ent in doc.ents:
-        if ent.label_ in ["ORG", "PERSON"]:
-            if 1 < len(ent.text.split()) < 10:
-                cleaned = ent.text.strip()
-                skip = ["this agreement", "the agreement",
-                        "the company", "the parties"]
-                if (cleaned not in parties and
-                        cleaned.lower() not in skip and
-                        len(cleaned) > 3):
-                    parties.append(cleaned)
+    # Method 1: NLTK NER chunker
+    try:
+        tokens   = nltk.word_tokenize(header)
+        pos_tags = nltk.pos_tag(tokens)
+        chunks   = nltk.ne_chunk(pos_tags, binary=False)
 
+        for chunk in chunks:
+            if hasattr(chunk, "label"):
+                if chunk.label() in ["ORGANIZATION", "PERSON"]:
+                    name = " ".join(
+                        c[0] for c in chunk
+                    ).strip()
+                    if (2 < len(name) < 80 and
+                            name not in parties):
+                        parties.append(name)
+    except Exception:
+        pass
+
+    # Method 2: Regex for explicit party definitions
+    # e.g. "Company Inc. ("Company")"
     party_pattern = (
-        r'([A-Z][A-Za-z\s,\.]+(?:Inc|LLC|Ltd|Corp|Co|LP|LLP)'
+        r'([A-Z][A-Za-z\s,\.]+(?:Inc|LLC|Ltd|Corp|Co|LP)'
         r'?\.?)\s*\("([^"]{2,30})"\)'
     )
     for full_name, _ in re.findall(party_pattern, header):
@@ -214,11 +221,21 @@ def extract_parties(text, nlp):
                 3 < len(full_name) < 100):
             parties.append(full_name)
 
+    # Method 3: All-caps company names
+    caps_pattern = r'\b([A-Z]{2,}(?:\s+[A-Z]{2,})+)\b'
+    caps_matches = re.findall(caps_pattern, header)
+    for match in caps_matches[:3]:
+        if (match not in parties and
+                len(match) > 4 and
+                match not in ["THIS AGREEMENT",
+                              "THE PARTIES"]):
+            parties.append(match)
+
     return parties[:5]
 
 
-def extract_clauses(text, nlp):
-    results = {"Contracting Parties": extract_parties(text, nlp)}
+def extract_clauses(text):
+    results = {"Contracting Parties": extract_parties(text)}
 
     for clause_name, patterns in PATTERNS.items():
         found = []
@@ -413,7 +430,7 @@ def main():
     # Load models
     with st.spinner("Loading models..."):
         try:
-            nlp, w2v, lstm_model, le = load_all_models()
+            w2v, lstm_model, le = load_all_models()
             st.success("✅ Models loaded successfully!")
         except Exception as e:
             st.error(f"❌ Error loading models: {e}")
@@ -481,15 +498,17 @@ def main():
             seq     = tokens_to_vector(tokens, w2v)
             seq_inp = seq.reshape(1, 512, 200)
 
-            probs       = lstm_model.predict(
-                seq_inp, verbose=0
-            )[0]
-            pred_idx    = np.argmax(probs)
-            pred_label  = le.classes_[pred_idx]
-            confidence  = float(probs[pred_idx])
+            input_name = lstm_session.get_inputs()[0].name
+            seq_float  = seq_inp.astype(np.float32)
+            probs      = lstm_session.run(
+                None, {input_name: seq_float}
+            )[0][0]
+            pred_idx   = np.argmax(probs)
+            pred_label = le.classes_[pred_idx]
+            confidence = float(probs[pred_idx])
 
             # ── Step 2: Extract clauses ───────────────────────
-            clauses = extract_clauses(contract_text, nlp)
+            clauses = extract_clauses(contract_text)
 
             # ── Step 3: Risk assessment ───────────────────────
             risks, score, level, color, emoji = assess_risk(
