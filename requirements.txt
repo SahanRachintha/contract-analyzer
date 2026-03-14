@@ -1,6 +1,5 @@
 streamlit
 onnxruntime
-gensim
 nltk
 scikit-learn
 numpy
