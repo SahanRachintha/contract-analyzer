@@ -2,7 +2,6 @@ import streamlit as st
 import numpy as np
 import pickle
 import re
-from gensim.models import Word2Vec
 import nltk
 from nltk.stem import WordNetLemmatizer
 from nltk.corpus import stopwords
@@ -41,8 +40,11 @@ st.markdown("""
 def load_all_models():
     import onnxruntime as ort
 
-    # Load Word2Vec
-    w2v = Word2Vec.load("legal_word2vec.model")
+    # Load Word2Vec vectors (no gensim needed)
+    vectors = np.load("w2v_vectors.npy")
+    with open("w2v_vocab.txt") as f:
+        vocab = f.read().splitlines()
+    w2v = dict(zip(vocab, vectors))
 
     # Load ONNX model
     sess_options = ort.SessionOptions()
@@ -106,12 +108,10 @@ def preprocess_text(text):
     return tokens
 
 
-def tokens_to_vector(tokens, w2v_model,
-                     max_len=512, vector_size=200):
+def tokens_to_vector(tokens, w2v_lookup, max_len=512, vector_size=200):
     """Convert tokens to padded sequence for LSTM"""
     sequence = [
-        w2v_model.wv[t] if t in w2v_model.wv
-        else np.zeros(vector_size)
+        w2v_lookup.get(t, np.zeros(vector_size))
         for t in tokens[:max_len]
     ]
     while len(sequence) < max_len:
