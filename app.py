@@ -430,7 +430,7 @@ def main():
     # Load models
     with st.spinner("Loading models..."):
         try:
-            w2v, lstm_model, le = load_all_models()
+            w2v, lstm_session, le = load_all_models()
             st.success("✅ Models loaded successfully!")
         except Exception as e:
             st.error(f"❌ Error loading models: {e}")
