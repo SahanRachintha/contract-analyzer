@@ -406,11 +406,11 @@ def assess_risk(clauses_dict, text, contract_type):
                       for r in risks)
 
     if total_score <= 2:
-        level, color, emoji = "LOW RISK",    "#28a745", "🟢"
+        level, color, emoji = "LOW RISK",    "#28a745", "LOW"
     elif total_score <= 5:
-        level, color, emoji = "MEDIUM RISK", "#ffa500", "🟡"
+        level, color, emoji = "MEDIUM RISK", "#ffa500", "MEDIUM"
     else:
-        level, color, emoji = "HIGH RISK",   "#dc3545", "🔴"
+        level, color, emoji = "HIGH RISK",   "#dc3545", "HIGH"
 
     return risks, total_score, level, color, emoji
 
@@ -420,7 +420,7 @@ def assess_risk(clauses_dict, text, contract_type):
 # ══════════════════════════════════════════════════════════════
 def main():
     # Header
-    st.title("📄 Legal Contract Analyzer")
+    st.title("Legal Contract Analyzer")
     st.markdown(
         "Upload a contract to get instant **classification**, "
         "**clause extraction**, and **risk assessment**."
@@ -431,9 +431,9 @@ def main():
     with st.spinner("Loading models..."):
         try:
             w2v, lstm_session, le = load_all_models()
-            st.success("✅ Models loaded successfully!")
+            st.success("Models loaded successfully!")
         except Exception as e:
-            st.error(f"❌ Error loading models: {e}")
+            st.error(f"Error loading models: {e}")
             st.info(
                 "Make sure these files are in the same folder:\n"
                 "- lstm_final.keras\n"
@@ -445,7 +445,7 @@ def main():
     st.divider()
 
     # Input section
-    st.subheader("📝 Input Contract")
+    st.subheader("Input Contract")
 
     input_method = st.radio(
         "Choose input method:",
@@ -473,20 +473,20 @@ def main():
                 "utf-8", errors="ignore"
             )
             st.success(
-                f"✅ Loaded: {uploaded.name} "
+                f"Loaded: {uploaded.name} "
                 f"({len(contract_text.split())} words)"
             )
             with st.expander("Preview contract text"):
                 st.text(contract_text[:1000] + "...")
 
     # Analyze button
-    if st.button("🔍 Analyze Contract",
+    if st.button("Analyze Contract",
                  type="primary",
                  disabled=not contract_text.strip()):
 
         if len(contract_text.split()) < 50:
             st.warning(
-                "⚠️ Contract text too short. "
+                "Contract text too short. "
                 "Please provide more content."
             )
             return
@@ -505,7 +505,6 @@ def main():
             )[0][0]
             pred_idx   = np.argmax(probs)
             pred_label = le.classes_[pred_idx]
-            confidence = float(probs[pred_idx])
 
             # ── Step 2: Extract clauses ───────────────────────
             clauses = extract_clauses(contract_text)
@@ -519,21 +518,16 @@ def main():
         # RESULTS
         # ════════════════════════════════════════════════════
         st.divider()
-        st.subheader("📊 Analysis Results")
+        st.subheader("Analysis Results")
 
-        # Top metrics row
-        col1, col2, col3, col4 = st.columns(4)
+        # Top metrics row — removed Classification Confidence
+        col1, col2, col3 = st.columns(3)
 
         with col1:
             st.metric("Contract Type", pred_label)
         with col2:
-            st.metric(
-                "Classification Confidence",
-                f"{confidence*100:.1f}%"
-            )
+            st.metric("Risk Level", level)
         with col3:
-            st.metric("Risk Level", f"{emoji} {level}")
-        with col4:
             st.metric("Risk Score", score)
 
         st.divider()
@@ -543,24 +537,16 @@ def main():
 
         # ── Left: Classification + Clauses ───────────────────
         with left:
-            st.subheader("🏷️ Classification")
-
-            # All class probabilities
-            st.write("**Confidence by contract type:**")
-            for i, class_name in enumerate(le.classes_):
-                prob = float(probs[i])
-                st.progress(
-                    prob,
-                    text=f"{class_name}: {prob*100:.1f}%"
-                )
+            st.subheader("Classification")
+            st.write(f"**Detected Contract Type:** {pred_label}")
 
             st.divider()
-            st.subheader("📑 Extracted Clauses")
+            st.subheader("Extracted Clauses")
 
             for clause_name, values in clauses.items():
                 if values:
                     with st.expander(
-                        f"✅ {clause_name} "
+                        f"{clause_name} "
                         f"({len(values)} found)",
                         expanded=True
                     ):
@@ -573,14 +559,14 @@ def main():
                 else:
                     st.markdown(
                         f'<div class="clause-box">'
-                        f'⚠️ <b>{clause_name}</b>: '
+                        f'<b>{clause_name}</b>: '
                         f'Not found</div>',
                         unsafe_allow_html=True
                     )
 
         # ── Right: Risk Assessment ────────────────────────────
         with right:
-            st.subheader("⚠️ Risk Assessment")
+            st.subheader("Risk Assessment")
 
             # Risk level banner
             st.markdown(
@@ -589,7 +575,7 @@ def main():
                 f"padding:15px; border-radius:8px; "
                 f"text-align:center; margin-bottom:15px;'>"
                 f"<h2 style='color:{color}; margin:0;'>"
-                f"{emoji} {level}</h2>"
+                f"{level}</h2>"
                 f"<p style='margin:5px 0 0 0;'>"
                 f"Risk Score: {score} | "
                 f"Total Flags: {len(risks)}</p>"
@@ -606,15 +592,15 @@ def main():
                         if r["severity"] == "LOW")
 
             c1, c2, c3 = st.columns(3)
-            c1.metric("🔴 High",   high)
-            c2.metric("🟡 Medium", medium)
-            c3.metric("🟢 Low",    low)
+            c1.metric("High",   high)
+            c2.metric("Medium", medium)
+            c3.metric("Low",    low)
 
             st.write("**Risk Details:**")
 
             if not risks:
                 st.success(
-                    "✅ No significant risks detected!"
+                    "No significant risks detected!"
                 )
             else:
                 for risk in risks:
@@ -623,11 +609,6 @@ def main():
                         "risk-high"   if sev == "HIGH"
                         else "risk-medium" if sev == "MEDIUM"
                         else "risk-low"
-                    )
-                    icon = (
-                        "🔴" if sev == "HIGH"
-                        else "🟡" if sev == "MEDIUM"
-                        else "🟢"
                     )
                     context_html = ""
                     if risk.get("context"):
@@ -639,7 +620,7 @@ def main():
 
                     st.markdown(
                         f'<div class="{css}">'
-                        f'{icon} <b>{risk["name"]}</b> '
+                        f'<b>{risk["name"]}</b> '
                         f'[{sev}]<br>'
                         f'<small>{risk["description"]}</small>'
                         f'{context_html}'
@@ -650,7 +631,7 @@ def main():
             st.divider()
 
             # Recommendations
-            st.subheader("💡 Recommendations")
+            st.subheader("Recommendations")
 
             if level == "HIGH RISK":
                 st.error(
@@ -674,18 +655,17 @@ def main():
             if missing:
                 st.write("**Missing clauses to address:**")
                 for m in missing:
-                    st.write(f"  • {m['name']}")
+                    st.write(f"  - {m['name']}")
 
         # Download results
         st.divider()
-        st.subheader("💾 Export Results")
+        st.subheader("Export Results")
 
         # Build report text
         report_lines = [
             "CONTRACT ANALYSIS REPORT",
             "=" * 50,
             f"Contract Type:   {pred_label}",
-            f"Confidence:      {confidence*100:.1f}%",
             f"Risk Level:      {level}",
             f"Risk Score:      {score}",
             "",
@@ -696,9 +676,9 @@ def main():
             report_lines.append(f"\n{clause_name}:")
             if values:
                 for v in values:
-                    report_lines.append(f"  • {v[:200]}")
+                    report_lines.append(f"  - {v[:200]}")
             else:
-                report_lines.append("  • Not found")
+                report_lines.append("  - Not found")
 
         report_lines += [
             "",
@@ -714,7 +694,7 @@ def main():
         report_text = "\n".join(report_lines)
 
         st.download_button(
-            label="📥 Download Report (.txt)",
+            label="Download Report (.txt)",
             data=report_text,
             file_name="contract_analysis_report.txt",
             mime="text/plain"
@@ -722,15 +702,15 @@ def main():
 
     # ── Sidebar: Model Info ───────────────────────────────────
     with st.sidebar:
-        st.header("ℹ️ About")
+        st.header("About")
         st.markdown("""
         **Contract Analyzer** uses deep learning
         to analyze legal contracts.
 
         **Models Used:**
-        - 🧠 LSTM (80.83% CV accuracy)
-        - 📝 spaCy NER
-        - 🔍 Regex pattern matching
+        - LSTM Neural Network
+        - NLTK NER
+        - Regex pattern matching
 
         **Contract Types:**
         - Alliance & Cooperation
@@ -746,7 +726,7 @@ def main():
         """)
 
         st.divider()
-        st.header("📊 Model Performance")
+        st.header("Model Performance")
         perf_data = {
             "Model": ["ANN", "CNN", "LSTM"],
             "Accuracy": ["59.72%", "59.72%", "80.83%"]
