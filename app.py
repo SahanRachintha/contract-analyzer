@@ -6,14 +6,14 @@ import nltk
 from nltk.stem import WordNetLemmatizer
 from nltk.corpus import stopwords
 import unicodedata
- 
+
 # ── Page config ───────────────────────────────────────────────
 st.set_page_config(
     page_title="Contract Analyzer",
-    page_icon="",
+    page_icon="📄",
     layout="wide"
 )
- 
+
 # ── Simple clean styling ──────────────────────────────────────
 st.markdown("""
 <style>
@@ -31,21 +31,21 @@ st.markdown("""
                    text-align:center; }
 </style>
 """, unsafe_allow_html=True)
- 
- 
+
+
 # ══════════════════════════════════════════════════════════════
 # LOAD MODELS — cached so they only load once
 # ══════════════════════════════════════════════════════════════
 @st.cache_resource
 def load_all_models():
     import onnxruntime as ort
- 
+
     # Load Word2Vec vectors (no gensim needed)
     vectors = np.load("w2v_vectors.npy")
     with open("w2v_vocab.txt") as f:
         vocab = f.read().splitlines()
     w2v = dict(zip(vocab, vectors))
- 
+
     # Load ONNX model
     sess_options = ort.SessionOptions()
     sess_options.log_severity_level = 3
@@ -53,11 +53,11 @@ def load_all_models():
         "lstm_model.onnx",
         sess_options=sess_options
     )
- 
+
     # Load label encoder
     with open("label_encoder.pkl", "rb") as f:
         le = pickle.load(f)
- 
+
     # Download NLTK data
     nltk.download("punkt",        quiet=True)
     nltk.download("punkt_tab",    quiet=True)
@@ -66,9 +66,9 @@ def load_all_models():
     nltk.download("averaged_perceptron_tagger", quiet=True)
     nltk.download("maxent_ne_chunker", quiet=True)
     nltk.download("words",        quiet=True)
- 
+
     return w2v, lstm_session, le
- 
+
 # ══════════════════════════════════════════════════════════════
 # PREPROCESSING
 # ══════════════════════════════════════════════════════════════
@@ -81,33 +81,33 @@ LEGAL_PRESERVE = {
     "during", "before", "after", "within", "upon",
     "whereas", "hereby", "thereof", "herein"
 }
- 
+
 def preprocess_text(text):
     # Normalize unicode
     text = unicodedata.normalize("NFKD", text)
     text = text.encode("ascii", "ignore").decode("ascii")
     text = text.lower()
- 
+
     # Remove noise
     text = re.sub(r'-\s*\d+\s*-', '', text)
     text = re.sub(r'page\s+\d+\s+of\s+\d+', '', text,
                   flags=re.IGNORECASE)
     text = re.sub(r'\s+', ' ', text)
- 
+
     # Tokenize
     tokens = nltk.word_tokenize(text)
- 
+
     # Stopword removal — preserve legal terms
     stop_words = set(stopwords.words("english")) - LEGAL_PRESERVE
     tokens = [t for t in tokens if t not in stop_words]
- 
+
     # Lemmatize
     lemmatizer = WordNetLemmatizer()
     tokens = [lemmatizer.lemmatize(t) for t in tokens]
- 
+
     return tokens
- 
- 
+
+
 def tokens_to_vector(tokens, w2v_lookup, max_len=512, vector_size=200):
     """Convert tokens to padded sequence for LSTM"""
     sequence = [
@@ -117,8 +117,8 @@ def tokens_to_vector(tokens, w2v_lookup, max_len=512, vector_size=200):
     while len(sequence) < max_len:
         sequence.append(np.zeros(vector_size))
     return np.array(sequence)
- 
- 
+
+
 # ══════════════════════════════════════════════════════════════
 # CLAUSE EXTRACTION
 # ══════════════════════════════════════════════════════════════
@@ -181,8 +181,8 @@ PATTERNS = {
         r"(?:continue|renew)[^\.]{0,60}unless[^\.]{0,60}",
     ]
 }
- 
- 
+
+
 def extract_parties(text):
     """
     Extract contracting parties using NLTK NER
@@ -190,13 +190,13 @@ def extract_parties(text):
     """
     header  = text[:1500]
     parties = []
- 
+
     # Method 1: NLTK NER chunker
     try:
         tokens   = nltk.word_tokenize(header)
         pos_tags = nltk.pos_tag(tokens)
         chunks   = nltk.ne_chunk(pos_tags, binary=False)
- 
+
         for chunk in chunks:
             if hasattr(chunk, "label"):
                 if chunk.label() in ["ORGANIZATION", "PERSON"]:
@@ -208,8 +208,9 @@ def extract_parties(text):
                         parties.append(name)
     except Exception:
         pass
- 
+
     # Method 2: Regex for explicit party definitions
+    # e.g. "Company Inc. ("Company")"
     party_pattern = (
         r'([A-Z][A-Za-z\s,\.]+(?:Inc|LLC|Ltd|Corp|Co|LP)'
         r'?\.?)\s*\("([^"]{2,30})"\)'
@@ -219,7 +220,7 @@ def extract_parties(text):
         if (full_name not in parties and
                 3 < len(full_name) < 100):
             parties.append(full_name)
- 
+
     # Method 3: All-caps company names
     caps_pattern = r'\b([A-Z]{2,}(?:\s+[A-Z]{2,})+)\b'
     caps_matches = re.findall(caps_pattern, header)
@@ -229,13 +230,13 @@ def extract_parties(text):
                 match not in ["THIS AGREEMENT",
                               "THE PARTIES"]):
             parties.append(match)
- 
+
     return parties[:5]
- 
- 
+
+
 def extract_clauses(text):
     results = {"Contracting Parties": extract_parties(text)}
- 
+
     for clause_name, patterns in PATTERNS.items():
         found = []
         for pattern in patterns:
@@ -256,10 +257,10 @@ def extract_clauses(text):
             except re.error:
                 continue
         results[clause_name] = found[:3]
- 
+
     return results
- 
- 
+
+
 # ══════════════════════════════════════════════════════════════
 # RISK ASSESSMENT
 # ══════════════════════════════════════════════════════════════
@@ -278,7 +279,7 @@ CRITICAL_CLAUSES = {
                                      "liability_limit",
                                      "jurisdiction"],
 }
- 
+
 RISK_FLAGS = {
     "Unlimited Liability": {
         "severity": "HIGH",
@@ -338,21 +339,22 @@ RISK_FLAGS = {
         ]
     }
 }
- 
- 
+
+
 def assess_risk(clauses_dict, text, contract_type):
     risks = []
- 
+
+    # Check missing clauses
     clause_key_map = {
-        "parties":        "Contracting Parties",
-        "termination":    "Termination",
+        "parties":       "Contracting Parties",
+        "termination":   "Termination",
         "liability_limit":"Liability Limit",
-        "jurisdiction":   "Jurisdiction"
+        "jurisdiction":  "Jurisdiction"
     }
     required = CRITICAL_CLAUSES.get(contract_type, [
         "parties", "termination", "jurisdiction"
     ])
- 
+
     for req in required:
         display_name = clause_key_map.get(req, req)
         value = clauses_dict.get(display_name, [])
@@ -364,7 +366,8 @@ def assess_risk(clauses_dict, text, contract_type):
                                f"required for {contract_type}",
                 "context":     ""
             })
- 
+
+    # Check content risks
     for flag_name, flag_info in RISK_FLAGS.items():
         if flag_info.get("check_absence"):
             found = any(
@@ -396,40 +399,41 @@ def assess_risk(clauses_dict, text, contract_type):
                         "context":     context[:120]
                     })
                     break
- 
+
+    # Score
     scores      = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}
     total_score = sum(scores.get(r["severity"], 0)
                       for r in risks)
- 
+
     if total_score <= 2:
-        level, color = "LOW RISK",    "#28a745"
+        level, color, emoji = "LOW RISK",    "#28a745", "🟢"
     elif total_score <= 5:
-        level, color = "MEDIUM RISK", "#ffa500"
+        level, color, emoji = "MEDIUM RISK", "#ffa500", "🟡"
     else:
-        level, color = "HIGH RISK",   "#dc3545"
- 
-    return risks, total_score, level, color
- 
- 
+        level, color, emoji = "HIGH RISK",   "#dc3545", "🔴"
+
+    return risks, total_score, level, color, emoji
+
+
 # ══════════════════════════════════════════════════════════════
 # MAIN APP
 # ══════════════════════════════════════════════════════════════
 def main():
     # Header
-    st.title("Legal Contract Analyzer")
+    st.title("📄 Legal Contract Analyzer")
     st.markdown(
         "Upload a contract to get instant **classification**, "
         "**clause extraction**, and **risk assessment**."
     )
     st.divider()
- 
+
     # Load models
     with st.spinner("Loading models..."):
         try:
             w2v, lstm_session, le = load_all_models()
-            st.success("Models loaded successfully!")
+            st.success("✅ Models loaded successfully!")
         except Exception as e:
-            st.error(f"Error loading models: {e}")
+            st.error(f"❌ Error loading models: {e}")
             st.info(
                 "Make sure these files are in the same folder:\n"
                 "- lstm_final.keras\n"
@@ -437,20 +441,20 @@ def main():
                 "- label_encoder.pkl"
             )
             return
- 
+
     st.divider()
- 
+
     # Input section
-    st.subheader("Input Contract")
- 
+    st.subheader("📝 Input Contract")
+
     input_method = st.radio(
         "Choose input method:",
         ["Paste contract text", "Upload .txt file"],
         horizontal=True
     )
- 
+
     contract_text = ""
- 
+
     if input_method == "Paste contract text":
         contract_text = st.text_area(
             "Paste your contract text here:",
@@ -469,31 +473,31 @@ def main():
                 "utf-8", errors="ignore"
             )
             st.success(
-                f"Loaded: {uploaded.name} "
+                f"✅ Loaded: {uploaded.name} "
                 f"({len(contract_text.split())} words)"
             )
             with st.expander("Preview contract text"):
                 st.text(contract_text[:1000] + "...")
- 
+
     # Analyze button
-    if st.button("Analyze Contract",
+    if st.button("🔍 Analyze Contract",
                  type="primary",
                  disabled=not contract_text.strip()):
- 
+
         if len(contract_text.split()) < 50:
             st.warning(
-                "Contract text too short. "
+                "⚠️ Contract text too short. "
                 "Please provide more content."
             )
             return
- 
+
         with st.spinner("Analyzing contract..."):
- 
+
             # ── Step 1: Classify ──────────────────────────────
             tokens  = preprocess_text(contract_text)
             seq     = tokens_to_vector(tokens, w2v)
             seq_inp = seq.reshape(1, 512, 200)
- 
+
             input_name = lstm_session.get_inputs()[0].name
             seq_float  = seq_inp.astype(np.float32)
             probs      = lstm_session.run(
@@ -501,48 +505,63 @@ def main():
             )[0][0]
             pred_idx   = np.argmax(probs)
             pred_label = le.classes_[pred_idx]
- 
+            confidence = float(probs[pred_idx])
+
             # ── Step 2: Extract clauses ───────────────────────
             clauses = extract_clauses(contract_text)
- 
+
             # ── Step 3: Risk assessment ───────────────────────
-            risks, score, level, color = assess_risk(
+            risks, score, level, color, emoji = assess_risk(
                 clauses, contract_text, pred_label
             )
- 
+
         # ════════════════════════════════════════════════════
         # RESULTS
         # ════════════════════════════════════════════════════
         st.divider()
-        st.subheader("Analysis Results")
- 
-        # Top metrics row — confidence removed
-        col1, col2, col3 = st.columns(3)
- 
+        st.subheader("📊 Analysis Results")
+
+        # Top metrics row
+        col1, col2, col3, col4 = st.columns(4)
+
         with col1:
             st.metric("Contract Type", pred_label)
         with col2:
-            st.metric("Risk Level", level)
+            st.metric(
+                "Classification Confidence",
+                f"{confidence*100:.1f}%"
+            )
         with col3:
+            st.metric("Risk Level", f"{emoji} {level}")
+        with col4:
             st.metric("Risk Score", score)
- 
+
         st.divider()
- 
+
         # Two columns for details
         left, right = st.columns(2)
- 
+
         # ── Left: Classification + Clauses ───────────────────
         with left:
-            st.subheader("Classification")
-            st.write(f"**Detected Contract Type:** {pred_label}")
- 
+            st.subheader("🏷️ Classification")
+
+            # All class probabilities
+            st.write("**Confidence by contract type:**")
+            for i, class_name in enumerate(le.classes_):
+                prob = float(probs[i])
+                st.progress(
+                    prob,
+                    text=f"{class_name}: {prob*100:.1f}%"
+                )
+
             st.divider()
-            st.subheader("Extracted Clauses")
- 
+            st.subheader("📑 Extracted Clauses")
+
             for clause_name, values in clauses.items():
                 if values:
                     with st.expander(
-                        f"{clause_name} ({len(values)} found)",
+                        f"✅ {clause_name} "
+                        f"({len(values)} found)",
                         expanded=True
                     ):
                         for v in values:
@@ -554,30 +573,30 @@ def main():
                 else:
                     st.markdown(
                         f'<div class="clause-box">'
-                        f'<b>{clause_name}</b>: '
+                        f'⚠️ <b>{clause_name}</b>: '
                         f'Not found</div>',
                         unsafe_allow_html=True
                     )
- 
+
         # ── Right: Risk Assessment ────────────────────────────
         with right:
-            st.subheader("Risk Assessment")
- 
-            # Risk level banner — colors fully preserved
+            st.subheader("⚠️ Risk Assessment")
+
+            # Risk level banner
             st.markdown(
                 f"<div style='background:{color}22; "
                 f"border:2px solid {color}; "
                 f"padding:15px; border-radius:8px; "
                 f"text-align:center; margin-bottom:15px;'>"
                 f"<h2 style='color:{color}; margin:0;'>"
-                f"{level}</h2>"
+                f"{emoji} {level}</h2>"
                 f"<p style='margin:5px 0 0 0;'>"
                 f"Risk Score: {score} | "
                 f"Total Flags: {len(risks)}</p>"
                 f"</div>",
                 unsafe_allow_html=True
             )
- 
+
             # Risk summary counts
             high   = sum(1 for r in risks
                         if r["severity"] == "HIGH")
@@ -585,23 +604,30 @@ def main():
                         if r["severity"] == "MEDIUM")
             low    = sum(1 for r in risks
                         if r["severity"] == "LOW")
- 
+
             c1, c2, c3 = st.columns(3)
-            c1.metric("High",   high)
-            c2.metric("Medium", medium)
-            c3.metric("Low",    low)
- 
+            c1.metric("🔴 High",   high)
+            c2.metric("🟡 Medium", medium)
+            c3.metric("🟢 Low",    low)
+
             st.write("**Risk Details:**")
- 
+
             if not risks:
-                st.success("No significant risks detected!")
+                st.success(
+                    "✅ No significant risks detected!"
+                )
             else:
                 for risk in risks:
                     sev = risk["severity"]
                     css = (
-                        "risk-high"        if sev == "HIGH"
+                        "risk-high"   if sev == "HIGH"
                         else "risk-medium" if sev == "MEDIUM"
                         else "risk-low"
+                    )
+                    icon = (
+                        "🔴" if sev == "HIGH"
+                        else "🟡" if sev == "MEDIUM"
+                        else "🟢"
                     )
                     context_html = ""
                     if risk.get("context"):
@@ -610,22 +636,22 @@ def main():
                             f"...{risk['context'][:100]}..."
                             f"</i></small>"
                         )
- 
+
                     st.markdown(
                         f'<div class="{css}">'
-                        f'<b>{risk["name"]}</b> '
+                        f'{icon} <b>{risk["name"]}</b> '
                         f'[{sev}]<br>'
                         f'<small>{risk["description"]}</small>'
                         f'{context_html}'
                         f'</div>',
                         unsafe_allow_html=True
                     )
- 
+
             st.divider()
- 
+
             # Recommendations
-            st.subheader("Recommendations")
- 
+            st.subheader("💡 Recommendations")
+
             if level == "HIGH RISK":
                 st.error(
                     "**High Risk Contract** — Legal review "
@@ -641,22 +667,25 @@ def main():
                     "**Low Risk Contract** — Standard review "
                     "recommended before signing."
                 )
- 
+
+            # Specific recommendations
             missing = [r for r in risks
                       if "Missing" in r["name"]]
             if missing:
                 st.write("**Missing clauses to address:**")
                 for m in missing:
-                    st.write(f"  - {m['name']}")
- 
+                    st.write(f"  • {m['name']}")
+
         # Download results
         st.divider()
-        st.subheader("Export Results")
- 
+        st.subheader("💾 Export Results")
+
+        # Build report text
         report_lines = [
             "CONTRACT ANALYSIS REPORT",
             "=" * 50,
             f"Contract Type:   {pred_label}",
+            f"Confidence:      {confidence*100:.1f}%",
             f"Risk Level:      {level}",
             f"Risk Score:      {score}",
             "",
@@ -667,10 +696,10 @@ def main():
             report_lines.append(f"\n{clause_name}:")
             if values:
                 for v in values:
-                    report_lines.append(f"  - {v[:200]}")
+                    report_lines.append(f"  • {v[:200]}")
             else:
-                report_lines.append("  - Not found")
- 
+                report_lines.append("  • Not found")
+
         report_lines += [
             "",
             "RISK FLAGS",
@@ -681,51 +710,50 @@ def main():
                 f"[{risk['severity']}] {risk['name']}: "
                 f"{risk['description']}"
             )
- 
+
         report_text = "\n".join(report_lines)
- 
+
         st.download_button(
-            label="Download Report (.txt)",
+            label="📥 Download Report (.txt)",
             data=report_text,
             file_name="contract_analysis_report.txt",
             mime="text/plain"
         )
- 
+
     # ── Sidebar: Model Info ───────────────────────────────────
     with st.sidebar:
-        st.header("About")
+        st.header("ℹ️ About")
         st.markdown("""
         **Contract Analyzer** uses deep learning
         to analyze legal contracts.
- 
+
         **Models Used:**
-        - LSTM (80.83% CV accuracy)
-        - NLTK NER
-        - Regex pattern matching
- 
+        - 🧠 LSTM (80.83% CV accuracy)
+        - 📝 spaCy NER
+        - 🔍 Regex pattern matching
+
         **Contract Types:**
         - Alliance & Cooperation
         - Distribution & Sales
         - License & IP
         - Services & Outsourcing
         - Development & Manufacturing
- 
+
         **What it detects:**
         - Contract classification
         - Key clause extraction
         - Risk flags & scoring
         """)
- 
+
         st.divider()
-        st.header("Model Performance")
+        st.header("📊 Model Performance")
         perf_data = {
             "Model": ["ANN", "CNN", "LSTM"],
             "Accuracy": ["59.72%", "59.72%", "80.83%"]
         }
         import pandas as pd
         st.table(pd.DataFrame(perf_data))
- 
- 
+
+
 if __name__ == "__main__":
     main()
- 
