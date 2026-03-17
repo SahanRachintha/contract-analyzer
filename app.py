@@ -18,17 +18,73 @@ st.set_page_config(
 st.markdown("""
 <style>
     .main { background-color: #f8f9fa; }
+
+    /* Risk cards */
     .risk-high   { background:#ffe0e0; border-left:5px solid #ff4444;
                    padding:10px; border-radius:5px; margin:5px 0; }
     .risk-medium { background:#fff3cd; border-left:5px solid #ffa500;
                    padding:10px; border-radius:5px; margin:5px 0; }
     .risk-low    { background:#d4edda; border-left:5px solid #28a745;
                    padding:10px; border-radius:5px; margin:5px 0; }
-    .clause-box  { background:#ffffff; border:1px solid #dee2e6;
-                   padding:10px; border-radius:5px; margin:5px 0; }
+
+    /* Metric box */
     .metric-box  { background:#ffffff; border:1px solid #dee2e6;
                    padding:15px; border-radius:8px;
                    text-align:center; }
+
+    /* Clause section headers */
+    .clause-section-header {
+        font-weight: 700;
+        font-size: 0.85rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 6px 12px;
+        border-radius: 4px 4px 0 0;
+        margin-bottom: 0;
+    }
+
+    /* Clause value box — sits below its header */
+    .clause-value {
+        padding: 10px 14px;
+        border-radius: 0 0 6px 6px;
+        font-size: 0.92rem;
+        line-height: 1.55;
+        margin-bottom: 10px;
+    }
+
+    /* Not-found box */
+    .clause-missing {
+        background: #f8f9fa;
+        border: 1px dashed #adb5bd;
+        border-left: 4px solid #adb5bd;
+        padding: 8px 12px;
+        border-radius: 5px;
+        margin-bottom: 8px;
+        color: #6c757d;
+        font-size: 0.88rem;
+    }
+
+    /* Per-clause-type color themes */
+    .ch-parties   .clause-section-header { background:#dbeafe; color:#1e40af; }
+    .ch-parties   .clause-value          { background:#eff6ff; border:1px solid #bfdbfe; border-top:none; }
+
+    .ch-date      .clause-section-header { background:#dcfce7; color:#166534; }
+    .ch-date      .clause-value          { background:#f0fdf4; border:1px solid #bbf7d0; border-top:none; }
+
+    .ch-payment   .clause-section-header { background:#fef9c3; color:#854d0e; }
+    .ch-payment   .clause-value          { background:#fefce8; border:1px solid #fde68a; border-top:none; }
+
+    .ch-term      .clause-section-header { background:#fee2e2; color:#991b1b; }
+    .ch-term      .clause-value          { background:#fff5f5; border:1px solid #fecaca; border-top:none; }
+
+    .ch-liability .clause-section-header { background:#ede9fe; color:#5b21b6; }
+    .ch-liability .clause-value          { background:#f5f3ff; border:1px solid #ddd6fe; border-top:none; }
+
+    .ch-juris     .clause-section-header { background:#ffedd5; color:#9a3412; }
+    .ch-juris     .clause-value          { background:#fff7ed; border:1px solid #fed7aa; border-top:none; }
+
+    .ch-renewal   .clause-section-header { background:#cffafe; color:#164e63; }
+    .ch-renewal   .clause-value          { background:#ecfeff; border:1px solid #a5f3fc; border-top:none; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -539,23 +595,39 @@ def main():
             st.divider()
             st.subheader("Extracted Clauses")
 
+            # Map each clause name to a CSS theme class
+            clause_theme = {
+                "Contracting Parties": "ch-parties",
+                "Effective Date":      "ch-date",
+                "Payment Terms":       "ch-payment",
+                "Termination":         "ch-term",
+                "Liability Limit":     "ch-liability",
+                "Jurisdiction":        "ch-juris",
+                "Renewal":             "ch-renewal",
+            }
+
             for clause_name, values in clauses.items():
+                theme = clause_theme.get(clause_name, "ch-parties")
                 if values:
-                    with st.expander(
-                        f"{clause_name} ({len(values)} found)",
-                        expanded=True
-                    ):
-                        for v in values:
-                            st.markdown(
-                                f'<div class="clause-box">'
-                                f'{v[:200]}</div>',
-                                unsafe_allow_html=True
-                            )
+                    html = f'<div class="{theme}">'
+                    html += (
+                        f'<div class="clause-section-header">'
+                        f'{clause_name} &nbsp;'
+                        f'<span style="font-weight:400;font-size:0.8em;">'
+                        f'({len(values)} found)</span></div>'
+                    )
+                    for v in values:
+                        html += (
+                            f'<div class="clause-value">'
+                            f'{v[:200]}</div>'
+                        )
+                    html += '</div>'
+                    st.markdown(html, unsafe_allow_html=True)
                 else:
                     st.markdown(
-                        f'<div class="clause-box">'
-                        f'<b>{clause_name}</b>: '
-                        f'Not found</div>',
+                        f'<div class="clause-missing">'
+                        f'<b>{clause_name}</b>: Not found'
+                        f'</div>',
                         unsafe_allow_html=True
                     )
 
