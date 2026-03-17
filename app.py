@@ -247,43 +247,67 @@ def extract_parties(text):
     header  = text[:1500]
     parties = []
 
+    # Skip these phrases — they are headings not parties
+    skip_phrases = [
+        "this agreement", "the agreement",
+        "services agreement", "license agreement",
+        "distribution agreement", "alliance agreement",
+        "development agreement", "outsourcing agreement",
+        "software services agreement", "payment terms",
+        "whereas", "now therefore", "in witness whereof",
+        "the company", "the parties", "the client",
+        "the provider", "witnesseth"
+    ]
+
+    def is_valid_party(name):
+        name_lower = name.lower().strip()
+        if any(skip in name_lower for skip in skip_phrases):
+            return False
+        if not (3 < len(name) < 100):
+            return False
+        if not any(c.isalpha() for c in name):
+            return False
+        return True
+
     # Method 1: NLTK NER chunker
     try:
         tokens   = nltk.word_tokenize(header)
         pos_tags = nltk.pos_tag(tokens)
         chunks   = nltk.ne_chunk(pos_tags, binary=False)
-
         for chunk in chunks:
-            if hasattr(chunk, "label"):
-                if chunk.label() in ["ORGANIZATION", "PERSON"]:
-                    name = " ".join(
-                        c[0] for c in chunk
-                    ).strip()
-                    if (2 < len(name) < 80 and
-                            name not in parties):
-                        parties.append(name)
+            if hasattr(chunk, "label") and \
+               chunk.label() in ["ORGANIZATION", "PERSON"]:
+                name = " ".join(
+                    c[0] for c in chunk
+                ).strip()
+                if is_valid_party(name) and \
+                   name not in parties:
+                    parties.append(name)
     except Exception:
         pass
 
-    # Method 2: Regex for explicit party definitions
+    # Method 2: Explicit definitions e.g. Name Inc. ("Name")
     party_pattern = (
         r'([A-Z][A-Za-z\s,\.]+(?:Inc|LLC|Ltd|Corp|Co|LP)'
         r'?\.?)\s*\("([^"]{2,30})"\)'
     )
     for full_name, _ in re.findall(party_pattern, header):
         full_name = full_name.strip()
-        if (full_name not in parties and
-                3 < len(full_name) < 100):
+        if is_valid_party(full_name) and \
+           full_name not in parties:
             parties.append(full_name)
 
-    # Method 3: All-caps company names
+    # Method 3: ALL CAPS company names
     caps_pattern = r'\b([A-Z]{2,}(?:\s+[A-Z]{2,})+)\b'
-    caps_matches = re.findall(caps_pattern, header)
-    for match in caps_matches[:3]:
-        if (match not in parties and
-                len(match) > 4 and
-                match not in ["THIS AGREEMENT",
-                              "THE PARTIES"]):
+    skip_caps = [
+        "THIS AGREEMENT", "THE PARTIES", "THE COMPANY",
+        "NOW THEREFORE", "IN WITNESS", "PAYMENT TERMS",
+        "WHEREAS", "SERVICE PROVIDER", "THE CLIENT"
+    ]
+    for match in re.findall(caps_pattern, header)[:5]:
+        if match not in parties and \
+           len(match) > 4 and \
+           match not in skip_caps:
             parties.append(match)
 
     return parties[:5]
@@ -557,6 +581,7 @@ def main():
             )[0][0]
             pred_idx   = np.argmax(probs)
             pred_label = le.classes_[pred_idx]
+            confidence = float(probs[pred_idx])
 
             # ── Step 2: Extract clauses ───────────────────────
             clauses = extract_clauses(contract_text)
@@ -581,6 +606,19 @@ def main():
             st.metric("Risk Level", level)
         with col3:
             st.metric("Risk Score", score)
+
+        # Low confidence warning
+        if confidence < 0.50:
+            st.warning(
+                "Low confidence prediction — this contract "
+                "may contain mixed clause types or fall outside "
+                "standard categories. Manual review recommended."
+            )
+        elif confidence < 0.65:
+            st.info(
+                "Moderate confidence prediction — review "
+                "contract type before proceeding."
+            )
 
         st.divider()
 
